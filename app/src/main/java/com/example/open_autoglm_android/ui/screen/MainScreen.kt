@@ -3,7 +3,6 @@ package com.example.open_autoglm_android.ui.screen
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DrawerValue
@@ -29,10 +28,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(
-    onNavigateToPromptLog: () -> Unit,
-    onNavigateToSettings: () -> Unit
-) {
+fun MainScreen() {
     val viewModel: ChatViewModel = viewModel()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -66,22 +62,6 @@ fun MainScreen(
                         Icon(
                             imageVector = Icons.Default.Menu,
                             contentDescription = "对话列表"
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onNavigateToPromptLog) {
-                        Icon(
-                            imageVector = Icons.Default.Description,
-                            contentDescription = "提示词日志",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "设置",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },

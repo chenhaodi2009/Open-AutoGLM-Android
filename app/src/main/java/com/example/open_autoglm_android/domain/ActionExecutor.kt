@@ -32,14 +32,14 @@ data class ExecuteResult(
 )
 
 class ActionExecutor(private val service: AutoGLMAccessibilityService) {
-    
+
     suspend fun execute(actionJson: String, screenWidth: Int, screenHeight: Int): ExecuteResult {
         return try {
             Log.d("ActionExecutor", "开始解析动作: ${actionJson.take(500)}")
-            
+
             val jsonString = extractJsonFromText(actionJson)
             Log.d("ActionExecutor", "提取的 JSON: ${jsonString.take(200)}")
-            
+
             if (jsonString.isEmpty() || jsonString == actionJson.trim()) {
                 val fixedJson = tryFixMalformedJson(actionJson)
                 if (fixedJson.isNotEmpty()) {
@@ -54,13 +54,13 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
                         Log.w("ActionExecutor", "修复后的 JSON 仍然无法解析", e)
                     }
                 }
-                
+
                 return ExecuteResult(
                     success = false,
                     message = "无法从响应中提取有效的 JSON 动作。响应内容: ${actionJson.take(200)}"
                 )
             }
-            
+
             val jsonElement = try {
                 JsonParser.parseString(jsonString)
             } catch (e: Exception) {
@@ -74,7 +74,11 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
                     val fixedJson = tryFixMalformedJson(jsonString)
                     if (fixedJson.isNotEmpty()) {
                         try {
-                            return processActionObject(JsonParser.parseString(fixedJson).asJsonObject, screenWidth, screenHeight)
+                            return processActionObject(
+                                JsonParser.parseString(fixedJson).asJsonObject,
+                                screenWidth,
+                                screenHeight
+                            )
                         } catch (e3: Exception) {
                             Log.e("ActionExecutor", "修复后仍然无法解析", e3)
                         }
@@ -82,7 +86,7 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
                     throw e2
                 }
             }
-            
+
             if (!jsonElement.isJsonObject) {
                 val errorMsg = if (jsonElement.isJsonPrimitive) {
                     "响应不是 JSON 对象，而是: ${jsonElement.asString.take(100)}"
@@ -91,55 +95,63 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
                 }
                 throw IllegalStateException(errorMsg)
             }
-            
+
             val actionObj = jsonElement.asJsonObject
             Log.d("ActionExecutor", "解析成功，对象: $actionObj")
-            
+
             processActionObject(actionObj, screenWidth, screenHeight)
         } catch (e: Exception) {
             Log.e("ActionExecutor", "解析动作失败", e)
             ExecuteResult(success = false, message = "解析动作失败: ${e.message}")
         }
     }
-    
-    private suspend fun processActionObject(actionObj: JsonObject, screenWidth: Int, screenHeight: Int): ExecuteResult {
+
+    private suspend fun processActionObject(
+        actionObj: JsonObject,
+        screenWidth: Int,
+        screenHeight: Int
+    ): ExecuteResult {
         val metadata = actionObj.get("_metadata")?.asString ?: ""
-        
+
         return when (metadata) {
             "finish" -> {
                 val message = actionObj.get("message")?.asString ?: "任务完成"
                 bringAppToForeground()
                 ExecuteResult(success = true, message = message)
             }
+
             "do" -> {
                 val action = actionObj.get("action")?.asString ?: ""
                 executeAction(action, actionObj, screenWidth, screenHeight)
             }
+
             else -> {
                 ExecuteResult(success = false, message = "未知的动作类型: $metadata")
             }
         }
     }
-    
+
     private fun extractJsonFromText(text: String): String {
         val trimmed = text.trim()
         if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
             try {
                 JsonParser.parseString(trimmed)
                 return trimmed
-            } catch (e: Exception) { }
+            } catch (e: Exception) {
+            }
         }
-        
+
         val jsonCandidates = mutableListOf<String>()
         var startIndex = -1
         var braceCount = 0
-        
+
         for (i in trimmed.indices) {
             when (trimmed[i]) {
                 '{' -> {
                     if (startIndex == -1) startIndex = i
                     braceCount++
                 }
+
                 '}' -> {
                     braceCount--
                     if (braceCount == 0 && startIndex != -1) {
@@ -147,55 +159,64 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
                         try {
                             JsonParser.parseString(candidate)
                             jsonCandidates.add(candidate)
-                        } catch (e: Exception) { }
+                        } catch (e: Exception) {
+                        }
                         startIndex = -1
                     }
                 }
             }
         }
-        
+
         if (jsonCandidates.isNotEmpty()) return jsonCandidates.first()
-        
+
         val fixedJson = tryFixMalformedJson(trimmed)
         if (fixedJson.isNotEmpty()) {
             try {
                 JsonParser.parseString(fixedJson)
                 return fixedJson
-            } catch (e: Exception) { }
+            } catch (e: Exception) {
+            }
         }
-        
+
         return trimmed
     }
-    
+
     private fun tryFixMalformedJson(text: String): String {
         val functionCallPattern = Regex("""(do|finish)\s*\(([^)]+)\)""", RegexOption.IGNORE_CASE)
         val functionMatch = functionCallPattern.find(text)
-        
+
         if (functionMatch != null) {
             val functionName = functionMatch.groupValues[1].lowercase()
             val paramsStr = functionMatch.groupValues[2]
-            
+
             if (functionName == "finish") {
-                val messagePattern = Regex("""message\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+                val messagePattern =
+                    Regex("""message\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
                 val messageMatch = messagePattern.find(paramsStr)
                 val message = messageMatch?.groupValues?.get(1) ?: paramsStr.trim().trim('"', '\'')
                 return """{"_metadata": "finish", "message": "$message"}"""
             } else if (functionName == "do") {
                 val action = mutableMapOf<String, Any>("_metadata" to "do")
-                val paramPattern = Regex("""(\w+)\s*=\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\[[^\]]+\]|\d+\.?\d*|true|false)""", RegexOption.IGNORE_CASE)
+                val paramPattern = Regex(
+                    """(\w+)\s*=\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\[[^\]]+\]|\d+\.?\d*|true|false)""",
+                    RegexOption.IGNORE_CASE
+                )
                 val paramMatches = paramPattern.findAll(paramsStr)
-                
+
                 for (match in paramMatches) {
                     val key = match.groupValues[1]
                     val valueStr = match.groupValues[2].trim()
                     val value: Any = when {
                         valueStr.startsWith("[") -> {
-                            val arrayValues = valueStr.substring(1, valueStr.length - 1).split(",").map { it.trim() }
+                            val arrayValues = valueStr.substring(1, valueStr.length - 1).split(",")
+                                .map { it.trim() }
                             "[" + arrayValues.joinToString(",") + "]"
                         }
+
                         valueStr.startsWith("\"") || valueStr.startsWith("'") -> {
                             valueStr.trim('"', '\'').replace("\\\"", "\"").replace("\\'", "'")
                         }
+
                         valueStr == "true" -> true
                         valueStr == "false" -> false
                         valueStr.contains(".") -> valueStr.toDoubleOrNull() ?: valueStr
@@ -203,7 +224,7 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
                     }
                     action[key] = value
                 }
-                
+
                 val jsonBuilder = StringBuilder("{")
                 jsonBuilder.append("\"_metadata\": \"do\"")
                 for ((key, value) in action) {
@@ -214,6 +235,7 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
                             if (value.startsWith("[")) jsonBuilder.append(value)
                             else jsonBuilder.append("\"${value.replace("\"", "\\\"")}\"")
                         }
+
                         is Number, is Boolean -> jsonBuilder.append(value)
                         else -> {
                             val vStr = value.toString()
@@ -226,29 +248,42 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
                 return jsonBuilder.toString()
             }
         }
-        
-        val pattern1 = Regex("""do\s*\(\s*action\s*=\s*["']([^"']+)["']\s*,\s*app\s*=\s*["']([^"']+)["']\s*\)""", RegexOption.IGNORE_CASE)
+
+        val pattern1 = Regex(
+            """do\s*\(\s*action\s*=\s*["']([^"']+)["']\s*,\s*app\s*=\s*["']([^"']+)["']\s*\)""",
+            RegexOption.IGNORE_CASE
+        )
         val match1 = pattern1.find(text)
         if (match1 != null) {
             return """{"_metadata": "do", "action": "${match1.groupValues[1]}", "app": "${match1.groupValues[2]}"}"""
         }
-        
-        val launchPattern = Regex("""(?:打开|启动|运行|launch)\s*([^\s，,。.]+)""", RegexOption.IGNORE_CASE)
+
+        val launchPattern =
+            Regex("""(?:打开|启动|运行|launch)\s*([^\s，,。.]+)""", RegexOption.IGNORE_CASE)
         val launchMatch = launchPattern.find(text)
         if (launchMatch != null) {
             return """{"_metadata": "do", "action": "Launch", "app": "${launchMatch.groupValues[1].trim()}"}"""
         }
-        
+
         return ""
     }
-    
-    private fun convertRelativeToAbsolute(element: List<Float>, screenWidth: Int, screenHeight: Int): Pair<Float, Float> {
+
+    private fun convertRelativeToAbsolute(
+        element: List<Float>,
+        screenWidth: Int,
+        screenHeight: Int
+    ): Pair<Float, Float> {
         val x = (element[0] / 1000f) * screenWidth
         val y = (element[1] / 1000f) * screenHeight
         return Pair(x, y)
     }
-    
-    private suspend fun executeAction(action: String, actionObj: JsonObject, screenWidth: Int, screenHeight: Int): ExecuteResult {
+
+    private suspend fun executeAction(
+        action: String,
+        actionObj: JsonObject,
+        screenWidth: Int,
+        screenHeight: Int
+    ): ExecuteResult {
         FloatingWindowService.getInstance()?.setVisibility(false)
         delay(100)
         val result = try {
@@ -269,17 +304,30 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
         }
         return result
     }
-    
+
     private suspend fun launchApp(actionObj: JsonObject): ExecuteResult {
-        val appName = actionObj.get("app")?.asString ?: return ExecuteResult(success = false, message = "Launch 操作缺少 app 参数")
+        val appName = actionObj.get("app")?.asString ?: return ExecuteResult(
+            success = false,
+            message = "Launch 操作缺少 app 参数"
+        )
         val packageName = getPackageName(appName)
-        if (packageName == appName && !isPackageInstalled(packageName)) {
-            return ExecuteResult(success = false, message = "找不到应用: $appName，且未安装此包名")
+
+        // 检查应用是否已启用
+        if (!AppRegistry.isAppEnabled(packageName)) {
+            Log.w("ActionExecutor", "尝试打开未启用的应用: $appName (包名: $packageName)")
+            return ExecuteResult(
+                success = false,
+                message = "应用 $appName 未启用。请在应用管理页面启用该应用后再试。"
+            )
         }
+
         return try {
             val pm = service.packageManager
             val intent = pm.getLaunchIntentForPackage(packageName)
-                ?: return ExecuteResult(success = false, message = "找不到应用: $appName (包名: $packageName)")
+                ?: return ExecuteResult(
+                    success = false,
+                    message = "找不到应用: $appName (包名: $packageName)"
+                )
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             service.startActivity(intent)
             delay(2000)
@@ -297,17 +345,26 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
             false
         }
     }
-    
-    private suspend fun tap(actionObj: JsonObject, screenWidth: Int, screenHeight: Int): ExecuteResult {
+
+    private suspend fun tap(
+        actionObj: JsonObject,
+        screenWidth: Int,
+        screenHeight: Int
+    ): ExecuteResult {
         val element = actionObj.get("element")
         if (element?.isJsonArray == true) {
             val array = element.asJsonArray
             if (array.size() >= 2) {
-                val (absoluteX, absoluteY) = convertRelativeToAbsolute(listOf(array[0].asFloat, array[1].asFloat), screenWidth, screenHeight)
+                val (absoluteX, absoluteY) = convertRelativeToAbsolute(
+                    listOf(
+                        array[0].asFloat,
+                        array[1].asFloat
+                    ), screenWidth, screenHeight
+                )
                 service.tap(absoluteX, absoluteY)
                 delay(500)
                 return ExecuteResult(
-                    success = true, 
+                    success = true,
                     message = "已点击坐标: ($absoluteX, $absoluteY)",
                     actionDetail = ActionDetail("tap", x1 = absoluteX, y1 = absoluteY)
                 )
@@ -326,7 +383,7 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
                     node.recycle()
                     delay(500)
                     return ExecuteResult(
-                        success = success, 
+                        success = success,
                         actionDetail = ActionDetail("tap", x1 = x, y1 = y, text = text)
                     )
                 }
@@ -335,21 +392,30 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
             return ExecuteResult(success = false, message = "Tap 操作缺少 element 或 text 参数")
         }
     }
-    
+
     private suspend fun type(actionObj: JsonObject): ExecuteResult {
-        val text = actionObj.get("text")?.asString ?: return ExecuteResult(success = false, message = "Type 操作缺少 text 参数")
-        
+        val text = actionObj.get("text")?.asString ?: return ExecuteResult(
+            success = false,
+            message = "Type 操作缺少 text 参数"
+        )
+
         // 如果是 IME 模式且已启用，直接尝试输入，不需要找输入框
         if (service.currentInputMode == InputMode.IME && MyInputMethodService.isEnabled()) {
             val success = MyInputMethodService.typeText(text)
             if (success) {
                 delay(500)
-                return ExecuteResult(success = true, actionDetail = ActionDetail("type", text = text))
+                return ExecuteResult(
+                    success = true,
+                    actionDetail = ActionDetail("type", text = text)
+                )
             }
             Log.w("ActionExecutor", "IME 直接输入失败，尝试寻找输入框")
         }
 
-        val root = service.getRootNode() ?: return ExecuteResult(success = false, message = "无法获取根节点")
+        val root = service.getRootNode() ?: return ExecuteResult(
+            success = false,
+            message = "无法获取根节点"
+        )
         val inputNode = findEditableNode(root)
         if (inputNode != null) {
             val rect = android.graphics.Rect()
@@ -361,73 +427,114 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
             delay(500)
             root.recycle()
             return ExecuteResult(
-                success = success, 
+                success = success,
                 actionDetail = ActionDetail("type", x1 = x, y1 = y, text = text)
             )
         }
         root.recycle()
         return ExecuteResult(success = false, message = "找不到输入框")
     }
-    
-    private suspend fun swipe(actionObj: JsonObject, screenWidth: Int, screenHeight: Int): ExecuteResult {
+
+    private suspend fun swipe(
+        actionObj: JsonObject,
+        screenWidth: Int,
+        screenHeight: Int
+    ): ExecuteResult {
         val start = actionObj.get("start")?.asJsonArray
         val end = actionObj.get("end")?.asJsonArray
-        if (start == null || end == null || start.size() < 2 || end.size() < 2) return ExecuteResult(success = false, message = "Swipe 操作缺少 start 或 end 参数")
-        val (startX, startY) = convertRelativeToAbsolute(listOf(start[0].asFloat, start[1].asFloat), screenWidth, screenHeight)
-        val (endX, endY) = convertRelativeToAbsolute(listOf(end[0].asFloat, end[1].asFloat), screenWidth, screenHeight)
+        if (start == null || end == null || start.size() < 2 || end.size() < 2) return ExecuteResult(
+            success = false,
+            message = "Swipe 操作缺少 start 或 end 参数"
+        )
+        val (startX, startY) = convertRelativeToAbsolute(
+            listOf(start[0].asFloat, start[1].asFloat),
+            screenWidth,
+            screenHeight
+        )
+        val (endX, endY) = convertRelativeToAbsolute(
+            listOf(end[0].asFloat, end[1].asFloat),
+            screenWidth,
+            screenHeight
+        )
         service.swipe(startX, startY, endX, endY)
         delay(500)
         return ExecuteResult(
-            success = true, 
+            success = true,
             message = "已滑动从 ($startX, $startY) 到 ($endX, $endY)",
             actionDetail = ActionDetail("swipe", x1 = startX, y1 = startY, x2 = endX, y2 = endY)
         )
     }
-    
+
     private suspend fun back(): ExecuteResult {
         service.performBack()
         delay(500)
         return ExecuteResult(success = true, actionDetail = ActionDetail("back"))
     }
-    
+
     private suspend fun home(): ExecuteResult {
         service.performHome()
         delay(500)
         return ExecuteResult(success = true, actionDetail = ActionDetail("home"))
     }
-    
-    private suspend fun longPress(actionObj: JsonObject, screenWidth: Int, screenHeight: Int): ExecuteResult {
+
+    private suspend fun longPress(
+        actionObj: JsonObject,
+        screenWidth: Int,
+        screenHeight: Int
+    ): ExecuteResult {
         val element = actionObj.get("element")?.asJsonArray
-        if (element == null || element.size() < 2) return ExecuteResult(success = false, message = "LongPress 操作缺少 element 参数")
-        val (x, y) = convertRelativeToAbsolute(listOf(element[0].asFloat, element[1].asFloat), screenWidth, screenHeight)
+        if (element == null || element.size() < 2) return ExecuteResult(
+            success = false,
+            message = "LongPress 操作缺少 element 参数"
+        )
+        val (x, y) = convertRelativeToAbsolute(
+            listOf(element[0].asFloat, element[1].asFloat),
+            screenWidth,
+            screenHeight
+        )
         service.longPress(x, y)
         delay(800)
         return ExecuteResult(
-            success = true, 
+            success = true,
             message = "已长按坐标: ($x, $y)",
             actionDetail = ActionDetail("longpress", x1 = x, y1 = y)
         )
     }
-    
-    private suspend fun doubleTap(actionObj: JsonObject, screenWidth: Int, screenHeight: Int): ExecuteResult {
+
+    private suspend fun doubleTap(
+        actionObj: JsonObject,
+        screenWidth: Int,
+        screenHeight: Int
+    ): ExecuteResult {
         val element = actionObj.get("element")?.asJsonArray
-        if (element == null || element.size() < 2) return ExecuteResult(success = false, message = "DoubleTap 操作缺少 element 参数")
-        val (x, y) = convertRelativeToAbsolute(listOf(element[0].asFloat, element[1].asFloat), screenWidth, screenHeight)
+        if (element == null || element.size() < 2) return ExecuteResult(
+            success = false,
+            message = "DoubleTap 操作缺少 element 参数"
+        )
+        val (x, y) = convertRelativeToAbsolute(
+            listOf(element[0].asFloat, element[1].asFloat),
+            screenWidth,
+            screenHeight
+        )
         service.tap(x, y)
         delay(100)
         service.tap(x, y)
         delay(500)
         return ExecuteResult(
-            success = true, 
+            success = true,
             message = "已双击坐标: ($x, $y)",
             actionDetail = ActionDetail("doubletap", x1 = x, y1 = y)
         )
     }
-    
+
     private suspend fun wait(actionObj: JsonObject): ExecuteResult {
         val durationMs = parseDurationMillis(actionObj.get("duration"))
         delay(durationMs)
-        return ExecuteResult(success = true, message = "已等待 ${durationMs}ms", actionDetail = ActionDetail("wait"))
+        return ExecuteResult(
+            success = true,
+            message = "已等待 ${durationMs}ms",
+            actionDetail = ActionDetail("wait")
+        )
     }
 
     private fun parseDurationMillis(durationElement: JsonElement?): Long {
@@ -437,7 +544,8 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
             if (prim.isNumber) return prim.asLong.coerceAtLeast(0L)
             if (prim.isString) {
                 val raw = prim.asString.trim()
-                val regex = Regex("""(?i)(\d+(?:\.\d+)?)\s*(ms|millisecond|milliseconds|s|sec|secs|second|seconds)?""")
+                val regex =
+                    Regex("""(?i)(\d+(?:\.\d+)?)\s*(ms|millisecond|milliseconds|s|sec|secs|second|seconds)?""")
                 val match = regex.find(raw)
                 if (match != null) {
                     val value = match.groupValues[1].toDoubleOrNull() ?: 1.0
@@ -453,7 +561,7 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
         }
         return 1000L
     }
-    
+
     fun bringAppToForeground() {
         try {
             val packageName = service.packageName
@@ -468,45 +576,9 @@ class ActionExecutor(private val service: AutoGLMAccessibilityService) {
     }
 
     private fun getPackageName(appName: String): String {
-        val appPackageMap = mapOf(
-            "支付宝" to "com.eg.android.AlipayGphone",
-            "微信" to "com.tencent.mm",
-            "WeChat" to "com.tencent.mm",
-            "wechat" to "com.tencent.mm",
-            "QQ" to "com.tencent.mobileqq",
-            "qq" to "com.tencent.mobileqq",
-            "微博" to "com.sina.weibo",
-            "淘宝" to "com.taobao.taobao",
-            "京东" to "com.jingdong.app.mall",
-            "拼多多" to "com.xunmeng.pinduoduo",
-            "小红书" to "com.xingin.xhs",
-            "知乎" to "com.zhihu.android",
-            "高德地图" to "com.autonavi.minimap",
-            "百度地图" to "com.baidu.BaiduMap",
-            "美团" to "com.sankuai.meituan",
-            "bilibili" to "tv.danmaku.bili",
-            "抖音" to "com.ss.android.ugc.aweme",
-            "网易云音乐" to "com.netease.cloudmusic",
-            "Settings" to "com.android.settings",
-            "Chrome" to "com.android.chrome",
-            "YouTube" to "com.google.android.youtube"
-        )
-        val mappedPackage = appPackageMap[appName]
-        if (mappedPackage != null) return mappedPackage
-        try {
-            val pm = service.packageManager
-            val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
-            val resolveInfos = pm.queryIntentActivities(mainIntent, 0)
-            for (info in resolveInfos) {
-                val label = info.loadLabel(pm).toString()
-                if (label.equals(appName, ignoreCase = true) || label.contains(appName, ignoreCase = true)) {
-                    return info.activityInfo.packageName
-                }
-            }
-        } catch (e: Exception) { }
-        return appName
+        return AppRegistry.getPackageName(appName)
     }
-    
+
     private fun findEditableNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2 && root.isEditable) return root
         val childCount = root.childCount

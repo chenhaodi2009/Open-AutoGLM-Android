@@ -86,7 +86,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             // 初始化 ModelClient
             val baseUrl = preferencesRepository.getBaseUrlSync()
             val apiKey = preferencesRepository.getApiKeySync() ?: "EMPTY"
-            modelClient = ModelClient(baseUrl, apiKey)
+            modelClient = ModelClient(getApplication(), baseUrl, apiKey)
             
             // 初始化 ActionExecutor
             AutoGLMAccessibilityService.getInstance()?.let { service ->
@@ -278,7 +278,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
                 
-                modelClient = ModelClient(baseUrl, apiKey)
+                modelClient = ModelClient(getApplication(), baseUrl, apiKey)
                 actionExecutor = ActionExecutor(accessibilityService)
                 
                 // 清空消息上下文，开始新的任务
@@ -562,6 +562,34 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
             
             if (!result.success) {
+                val isNonRetryableError = result.message?.contains("未启用") == true ||
+                                         result.message?.contains("不在白名单") == true ||
+                                         result.message?.contains("应用管理页面") == true
+                
+                if (isNonRetryableError) {
+                    val errorMessage = result.message ?: "操作被阻止"
+                    Log.e("ChatViewModel", "遇到不可重试的错误，终止任务: $errorMessage")
+                    FloatingWindowService.getInstance()?.updateStatus("已停止", stepCount, errorMessage)
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = errorMessage
+                    )
+                    
+                    val errorTimestamp = System.currentTimeMillis()
+                    val errorMsg = ChatMessage(
+                        id = "error_${errorTimestamp}",
+                        role = MessageRole.ASSISTANT,
+                        content = errorMessage,
+                        timestamp = errorTimestamp
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        messages = _uiState.value.messages + errorMsg
+                    )
+                    
+                    executor.bringAppToForeground()
+                    return
+                }
+                
                 retryCount++
                 Log.w("ChatViewModel", "动作执行失败，准备重试 ($retryCount/3): ${result.message}")
 
@@ -643,6 +671,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     append("[${msg.role}]:\n")
                     if (!msg.thinking.isNullOrBlank()) {
                         append("<thinking>\n${msg.thinking}\n</thinking>\n")
+                    }
+                    if (!msg.action.isNullOrBlank()) {
+                        append("<action>\n${msg.action}\n</action>\n")
                     }
                     append(msg.content)
                     append("\n\n" + "-".repeat(20) + "\n\n")
@@ -741,7 +772,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val baseUrl = preferencesRepository.getBaseUrlSync()
             val apiKey = preferencesRepository.getApiKeySync() ?: "EMPTY"
-            modelClient = ModelClient(baseUrl, apiKey)
+            modelClient = ModelClient(getApplication(), baseUrl, apiKey)
         }
     }
 

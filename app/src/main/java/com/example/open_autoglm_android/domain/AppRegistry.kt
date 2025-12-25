@@ -1,132 +1,132 @@
 package com.example.open_autoglm_android.domain
 
+import android.annotation.SuppressLint
 import android.content.Context
-import android.os.Environment
+import android.content.pm.PackageManager
 import android.util.Log
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-import java.io.File
-import java.io.FileOutputStream
-import java.io.InputStreamReader
+import com.example.open_autoglm_android.data.PreferencesRepository
+import kotlinx.coroutines.runBlocking
 
 /**
  * 负责应用名称到包名的映射管理
  */
 object AppRegistry {
     private const val TAG = "AppRegistry"
-    private const val CONFIG_FILE_NAME = "app_mapping.json"
-    private const val CONFIG_DIR_NAME = "OpenAutoGLM"
-    
+
     // 应用名称 -> 包名 的映射
     @Volatile
-    private var appPackageMap: Map<String, String> = emptyMap()
+    private var appPackageMap: MutableMap<String, String> = mutableMapOf()
+
+    // 包名 -> 应用名称 的反向映射
+    @Volatile
+    private var packageAppMap: MutableMap<String, String> = mutableMapOf()
+    
+    // PreferencesRepository 用于检查应用启用状态
+    @SuppressLint("StaticFieldLeak")
+    private var preferencesRepository: PreferencesRepository? = null
 
     /**
      * 初始化 AppRegistry
-     * 策略：
-     * 1. 优先尝试公共 Documents 目录 (无需特殊权限即可访问应用自己创建的文件，且便于用户查找)
-     * 2. 如果失败，回退到使用 Assets
+     * 从设备已安装应用列表中动态构建映射
      */
     fun initialize(context: Context) {
-        if (loadFromPublicDir(context, Environment.DIRECTORY_DOCUMENTS)) {
-            return
+        try {
+            // 初始化 PreferencesRepository
+            if (preferencesRepository == null) {
+                preferencesRepository = PreferencesRepository(context.applicationContext)
+            }
+            
+            val startTime = System.currentTimeMillis()
+            val packageManager = context.packageManager
+            val installedApps =
+                packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+
+            val tempAppPackageMap = mutableMapOf<String, String>()
+            val tempPackageAppMap = mutableMapOf<String, String>()
+
+            installedApps.forEach { appInfo ->
+                val packageName = appInfo.packageName
+                val appName = appInfo.loadLabel(packageManager).toString()
+
+                // 建立应用名称到包名的映射（支持原始名称和小写名称）
+                tempAppPackageMap[appName] = packageName
+                tempAppPackageMap[appName.lowercase()] = packageName
+
+                // 建立包名到应用名称的反向映射
+                tempPackageAppMap[packageName] = appName
+            }
+
+            appPackageMap = tempAppPackageMap
+            packageAppMap = tempPackageAppMap
+
+            val duration = System.currentTimeMillis() - startTime
+            Log.i(TAG, "Loaded ${installedApps.size} installed apps in ${duration}ms")
+            Log.i(TAG, "Created ${appPackageMap.size} app name mappings")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load installed apps", e)
         }
-        
-        loadFromAssets(context)
     }
 
     /**
-     * 尝试从公共目录加载 (如 Documents/OpenAutoGLM/)
+     * 根据应用名称获取包名
      */
-    private fun loadFromPublicDir(context: Context, directoryType: String): Boolean {
-        return try {
-            val publicDir = Environment.getExternalStoragePublicDirectory(directoryType)
-            val configDir = File(publicDir, CONFIG_DIR_NAME)
-            
-            loadConfigFile(context, configDir, "Public Storage ($directoryType)")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to load from public directory: $directoryType", e)
-            false
-        }
-    }
-
-    /**
-     * 通用的配置文件加载逻辑
-     */
-    private fun loadConfigFile(context: Context, dir: File, sourceName: String): Boolean {
-        try {
-            // 尝试创建目录
-            if (!dir.exists()) {
-                if (!dir.mkdirs()) {
-                    Log.w(TAG, "[$sourceName] Failed to create directory: ${dir.absolutePath}")
-                    // 如果目录创建失败（可能是权限问题），直接返回 false
-                    return false
-                }
-            }
-
-            val configFile = File(dir, CONFIG_FILE_NAME)
-            
-            // 如果文件不存在，尝试从 assets 复制
-            if (!configFile.exists()) {
-                Log.i(TAG, "[$sourceName] Config file not found, copying from assets...")
-                if (!copyAssetsToLocalStorage(context, CONFIG_FILE_NAME, configFile)) {
-                    Log.w(TAG, "[$sourceName] Failed to copy default config")
-                    return false
-                }
-            }
-            
-            // 尝试读取并解析
-            if (configFile.exists() && configFile.canRead()) {
-                val jsonString = configFile.readText()
-                val type = object : TypeToken<Map<String, String>>() {}.type
-                val map: Map<String, String>? = Gson().fromJson(jsonString, type)
-                
-                if (!map.isNullOrEmpty()) {
-                    appPackageMap = map
-                    Log.i(TAG, "Loaded ${appPackageMap.size} app mappings from $sourceName: ${configFile.absolutePath}")
-                    return true
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "[$sourceName] Error handling config file", e)
-        }
-        return false
-    }
-
-    private fun loadFromAssets(context: Context) {
-        try {
-            Log.i(TAG, "Loading config from assets (Fallback)...")
-            context.assets.open(CONFIG_FILE_NAME).use { inputStream ->
-                InputStreamReader(inputStream).use { reader ->
-                    val type = object : TypeToken<Map<String, String>>() {}.type
-                    val map: Map<String, String>? = Gson().fromJson(reader, type)
-                    appPackageMap = map ?: emptyMap()
-                    Log.i(TAG, "Loaded ${appPackageMap.size} app mappings from assets")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to load config from assets", e)
-            if (appPackageMap == null) {
-                appPackageMap = emptyMap()
-            }
-        }
-    }
-
-    private fun copyAssetsToLocalStorage(context: Context, assetName: String, destinationFile: File): Boolean {
-        return try {
-            context.assets.open(assetName).use { inputStream ->
-                FileOutputStream(destinationFile).use { outputStream ->
-                    inputStream.copyTo(outputStream)
-                }
-            }
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to copy asset: $assetName", e)
-            false
-        }
-    }
-
     fun getPackageName(appName: String): String {
-        return appPackageMap[appName.trim()] ?: appName
+        val trimmedName = appName.trim()
+        appPackageMap[trimmedName]?.let { return it }
+        appPackageMap[trimmedName.lowercase()]?.let { return it }
+        appPackageMap.entries.firstOrNull { (name, _) ->
+            name.contains(trimmedName, ignoreCase = true) ||
+                    trimmedName.contains(name, ignoreCase = true)
+        }?.let { return it.value }
+
+        return trimmedName
+    }
+
+    /**
+     * 根据包名获取应用名称
+     */
+    fun getAppName(packageName: String): String {
+        return packageAppMap[packageName] ?: packageName
+    }
+
+    /**
+     * 获取所有已安装应用的数量
+     */
+    fun getAppCount(): Int {
+        return packageAppMap.size
+    }
+
+    /**
+     * 检查应用是否已安装
+     */
+    fun isAppInstalled(packageName: String): Boolean {
+        return packageAppMap.containsKey(packageName)
+    }
+    
+    /**
+     * 检查应用是否已启用
+     */
+    fun isAppEnabled(packageName: String): Boolean {
+        return try {
+            if (preferencesRepository == null) {
+                Log.w(TAG, "PreferencesRepository not initialized, denying access to: $packageName")
+                return false
+            }
+            runBlocking {
+                preferencesRepository?.isAppEnabled(packageName) ?: false
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to check if app is enabled: $packageName", e)
+            false
+        }
+    }
+    
+    /**
+     * 根据应用名称获取包名
+     */
+    fun getPackageNameIfEnabled(appName: String): String? {
+        val packageName = getPackageName(appName)
+        return if (isAppEnabled(packageName)) packageName else null
     }
 }

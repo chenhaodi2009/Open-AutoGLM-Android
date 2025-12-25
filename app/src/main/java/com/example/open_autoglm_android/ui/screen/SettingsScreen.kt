@@ -34,8 +34,7 @@ import kotlin.math.roundToInt
 fun SettingsScreen(
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = viewModel(),
-    onNavigateToAdvancedAuth: () -> Unit,
-    onBack: () -> Unit,
+    onNavigateToAdvancedAuth: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -60,12 +59,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("设置") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "返回")
-                    }
-                }
+                title = { Text("设置") }
             )
         }
     ) { paddingValues ->
