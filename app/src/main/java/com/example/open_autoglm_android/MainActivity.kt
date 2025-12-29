@@ -24,6 +24,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.compose.NavHost
@@ -33,6 +35,7 @@ import com.example.open_autoglm_android.navigation.Screen
 import com.example.open_autoglm_android.ui.screen.AdvancedAuthScreen
 import com.example.open_autoglm_android.ui.screen.AppsScreen
 import com.example.open_autoglm_android.ui.screen.MainScreen
+import com.example.open_autoglm_android.ui.screen.ModelConfigScreen
 import com.example.open_autoglm_android.ui.screen.PromptLogScreen
 import com.example.open_autoglm_android.ui.screen.SettingsScreen
 import com.example.open_autoglm_android.ui.theme.OpenAutoGLMAndroidTheme
@@ -47,7 +50,7 @@ import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity(), Shizuku.OnBinderReceivedListener,
     Shizuku.OnBinderDeadListener, ServiceConnection,
-    Shizuku.OnRequestPermissionResultListener {
+    Shizuku.OnRequestPermissionResultListener, LifecycleEventObserver {
 
     companion object {
         private const val APPLICATION_ID = "com.example.open_autoglm_android"
@@ -59,8 +62,7 @@ class MainActivity : ComponentActivity(), Shizuku.OnBinderReceivedListener,
     private val appsViewModel by viewModels<AppsViewModel>()
 
     private var userService: IUserService? = null
-    private val userServiceArgs =
-        Shizuku.UserServiceArgs(ComponentName(APPLICATION_ID, UserService::class.java.name))
+    private val userServiceArgs = Shizuku.UserServiceArgs(ComponentName(APPLICATION_ID, UserService::class.java.name))
             .daemon(false)
             .processNameSuffix("adb_shell")
             .debuggable(false)
@@ -70,7 +72,6 @@ class MainActivity : ComponentActivity(), Shizuku.OnBinderReceivedListener,
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         initObserver()
-        initShizuku()
         enableEdgeToEdge()
         setContent {
             OpenAutoGLMAndroidTheme {
@@ -190,8 +191,16 @@ class MainActivity : ComponentActivity(), Shizuku.OnBinderReceivedListener,
                                 viewModel = settingsViewModel,
                                 onNavigateToAdvancedAuth = {
                                     navController.navigate(Screen.AdvancedAuth.name)
+                                },
+                                onNavigateToModelConfig = {
+                                    navController.navigate(Screen.ModelConfig.name)
                                 }
                             )
+                        }
+                        composable(Screen.ModelConfig.name){
+                            ModelConfigScreen {
+                                navController.popBackStack()
+                            }
                         }
                     }
                 }
@@ -200,6 +209,7 @@ class MainActivity : ComponentActivity(), Shizuku.OnBinderReceivedListener,
     }
 
     private fun initObserver() {
+        lifecycle.addObserver(this)
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 settingsViewModel.uiState.collect { uiState ->
@@ -214,15 +224,6 @@ class MainActivity : ComponentActivity(), Shizuku.OnBinderReceivedListener,
                 }
             }
         }
-    }
-
-    private fun initShizuku() {
-        // 添加权限申请监听
-        Shizuku.addRequestPermissionResultListener(this)
-        // Shizuku服务启动时调用该监听
-        Shizuku.addBinderReceivedListenerSticky(this)
-        // Shizuku服务终止时调用该监听
-        Shizuku.addBinderDeadListener(this)
     }
 
     override fun onBinderReceived() {
@@ -271,7 +272,6 @@ class MainActivity : ComponentActivity(), Shizuku.OnBinderReceivedListener,
         if (grantResult == PackageManager.PERMISSION_GRANTED) {
             Log.i(TAG, "Shizuku 授权成功")
             connectShizuku()
-
         } else {
             Log.i(TAG, "Shizuku 授权失败")
         }
@@ -286,12 +286,30 @@ class MainActivity : ComponentActivity(), Shizuku.OnBinderReceivedListener,
         Shizuku.bindUserService(userServiceArgs, this)
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        // 移除权限申请监听
-        Shizuku.removeRequestPermissionResultListener(this)
-        Shizuku.removeBinderReceivedListener(this)
-        Shizuku.removeBinderDeadListener(this)
-        Shizuku.unbindUserService(userServiceArgs, this, true)
+    override fun onStateChanged(
+        source: LifecycleOwner,
+        event: Lifecycle.Event
+    ) {
+        when(event){
+            Lifecycle.Event.ON_START -> {
+                Shizuku.addRequestPermissionResultListener(this)
+                Shizuku.addBinderReceivedListenerSticky(this)
+                Shizuku.addBinderDeadListener(this)
+            }
+
+            Lifecycle.Event.ON_STOP -> {
+                Shizuku.removeRequestPermissionResultListener(this)
+                Shizuku.removeBinderReceivedListener(this)
+                Shizuku.removeBinderDeadListener(this)
+            }
+
+            Lifecycle.Event.ON_DESTROY -> {
+                if (userService != null && Shizuku.pingBinder()){
+                    Shizuku.unbindUserService(userServiceArgs,this,false)
+                }
+            }
+
+            else -> {}
+        }
     }
 }
