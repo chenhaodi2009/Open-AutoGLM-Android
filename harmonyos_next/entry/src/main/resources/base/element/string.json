@@ -1,0 +1,12 @@
+{
+  "string": [
+    { "name": "app_name", "value": "AutoGLM HarmonyOS" },
+    { "name": "module_desc", "value": "AutoGLM HarmonyOS entry module" },
+    { "name": "main_ability_desc", "value": "Main ability" },
+    { "name": "accessibility_ext_label", "value": "AutoGLM Accessibility" },
+    { "name": "ime_ext_label", "value": "AutoGLM IME" },
+    { "name": "perm_accessibility_reason", "value": "用于执行自动化操作" },
+    { "name": "perm_capture_screen_reason", "value": "用于获取屏幕截图" },
+    { "name": "perm_input_method_reason", "value": "用于输入法服务" }
+  ]
+}
