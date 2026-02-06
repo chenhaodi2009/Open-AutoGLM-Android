@@ -11,6 +11,8 @@ export default class AutoGLMInputMethodExt extends InputMethodExtensionAbility {
   }
 
   createInputWindow(): inputMethod.InputWindow {
-    return this.context.createWindow('AutoGLMIME');
+    const window = this.context.createWindow('AutoGLMIME');
+    window.setUIContent('ime/KeyboardPanel');
+    return window;
   }
 }

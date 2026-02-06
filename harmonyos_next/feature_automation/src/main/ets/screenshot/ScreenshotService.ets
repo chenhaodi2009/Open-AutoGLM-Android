@@ -1,9 +1,15 @@
 import image from '@ohos.multimedia.image';
+import screenshot from '@ohos.screenshot';
 
 export class ScreenshotService {
   async capture(): Promise<image.PixelMap | undefined> {
-    console.info('capture screenshot placeholder');
-    return undefined;
+    try {
+      const pixelMap = await screenshot.takeScreenshot();
+      return pixelMap;
+    } catch (error) {
+      console.error(`capture screenshot failed: ${JSON.stringify(error)}`);
+      return undefined;
+    }
   }
 
   async toBase64(pixelMap?: image.PixelMap, quality: number = 80): Promise<string> {

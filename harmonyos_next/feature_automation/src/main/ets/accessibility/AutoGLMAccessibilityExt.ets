@@ -1,4 +1,5 @@
 import AccessibilityExtensionAbility from '@ohos.application.AccessibilityExtensionAbility';
+import accessibility from '@ohos.accessibility';
 
 export class AutoGLMAccessibilityExt extends AccessibilityExtensionAbility {
   private static instance: AutoGLMAccessibilityExt | null = null;
@@ -13,7 +14,12 @@ export class AutoGLMAccessibilityExt extends AccessibilityExtensionAbility {
       console.warn('Accessibility extension not ready');
       return;
     }
-    console.info(`tap at (${x}, ${y})`);
+    const path = new accessibility.GesturePath();
+    path.moveTo(x, y);
+    accessibility.sendGesture({
+      paths: [path],
+      duration: 50
+    });
   }
 
   static swipe(x1: number, y1: number, x2: number, y2: number): void {
@@ -22,7 +28,13 @@ export class AutoGLMAccessibilityExt extends AccessibilityExtensionAbility {
       console.warn('Accessibility extension not ready');
       return;
     }
-    console.info(`swipe from (${x1}, ${y1}) to (${x2}, ${y2})`);
+    const path = new accessibility.GesturePath();
+    path.moveTo(x1, y1);
+    path.lineTo(x2, y2);
+    accessibility.sendGesture({
+      paths: [path],
+      duration: 300
+    });
   }
 
   static back(): void {
@@ -31,7 +43,7 @@ export class AutoGLMAccessibilityExt extends AccessibilityExtensionAbility {
       console.warn('Accessibility extension not ready');
       return;
     }
-    console.info('perform back');
+    accessibility.sendKeyEvent({ keyCode: accessibility.KeyCode.KEYCODE_BACK });
   }
 
   static home(): void {
@@ -40,7 +52,7 @@ export class AutoGLMAccessibilityExt extends AccessibilityExtensionAbility {
       console.warn('Accessibility extension not ready');
       return;
     }
-    console.info('perform home');
+    accessibility.sendKeyEvent({ keyCode: accessibility.KeyCode.KEYCODE_HOME });
   }
 
   static inputText(text: string): void {
@@ -49,7 +61,7 @@ export class AutoGLMAccessibilityExt extends AccessibilityExtensionAbility {
       console.warn('Accessibility extension not ready');
       return;
     }
-    console.info(`input text: ${text}`);
+    accessibility.sendText(text);
   }
 
   onConnect(): void {

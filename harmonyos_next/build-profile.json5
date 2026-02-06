@@ -1,0 +1,21 @@
+{
+  "apiType": "stageMode",
+  "buildModeSet": [
+    {
+      "name": "debug",
+      "compileSdkVersion": 12,
+      "compatibleSdkVersion": 12
+    },
+    {
+      "name": "release",
+      "compileSdkVersion": 12,
+      "compatibleSdkVersion": 12
+    }
+  ],
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "entry"
+    }
+  ]
+}

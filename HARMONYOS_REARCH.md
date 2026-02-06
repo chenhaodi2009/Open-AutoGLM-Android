@@ -201,3 +201,5 @@ common_network/src/main/ets/
 - `feature_ime/`：输入法扩展能力骨架（InputMethodExtensionAbility）。【F:harmonyos_next/feature_ime/src/main/ets/ime/AutoGLMInputMethodExt.ets†L1-L14】
 - `common_data/`：配置持久化与对话数据存储骨架。【F:harmonyos_next/common_data/src/main/ets/preferences/SettingsStore.ets†L1-L51】【F:harmonyos_next/common_data/src/main/ets/database/ConversationStore.ets†L1-L40】
 - `common_network/`：模型请求封装与响应解析（ModelClient）。【F:harmonyos_next/common_network/src/main/ets/client/ModelClient.ets†L1-L80】
+- HarmonyOS 工程声明（`app.json5`、`build-profile.json5`、`entry/src/main/module.json5`、`main_pages.json`、`string.json`）已补齐，满足 Stage 模型与 API12 编译所需的最小配置。【F:harmonyos_next/app.json5†L1-L9】【F:harmonyos_next/build-profile.json5†L1-L19】【F:harmonyos_next/entry/src/main/module.json5†L1-L54】【F:harmonyos_next/entry/src/main/resources/base/profile/main_pages.json†L1-L7】【F:harmonyos_next/entry/src/main/resources/base/element/string.json†L1-L12】
+- 说明：为便于后续合并，该 HarmonyOS 资源中已移除 `app_icon.png`，需要时可按项目规范补回图标资源。
